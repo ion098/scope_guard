@@ -8,8 +8,19 @@
 #ifndef SCOPE_GUARD_HPP_
 #define SCOPE_GUARD_HPP_
 
+#include <exception>
 #include <type_traits>
 #include <utility>
+
+#if __cplusplus >= 202002L
+#if defined(_MSC_VER) && !defined(__clang__) && !defined(__INTEL_COMPILER)
+#define SG_NO_UNIQUE_ADRESSS [[msvc::no_unique_address]]
+#elif
+#define SG_NO_UNIQUE_ADRESSS [[no_unique_address]]
+#endif
+#elif
+#define SG_NO_UNIQUE_ADRESSS
+#endif
 
 #if __cplusplus >= 201703L
 #define SG_NODISCARD [[nodiscard]]
@@ -22,6 +33,13 @@
 
 namespace sg
 {
+  enum class ExitType {
+    ALWAYS,
+#if __cplusplus >= 201411L
+    ON_SUCCESS,
+    ON_FAILURE,
+#endif
+  };
   namespace detail
   {
     /* --- Some custom type traits --- */
@@ -76,10 +94,29 @@ namespace sg
                      std::is_nothrow_destructible<T>>
     {};
 
+    template<ExitType exit_type> class should_run;
+    template<> class<ExitType::ALWAYS> should_run{
+      constexpr static bool should_run() { return true; }
+    };
+#if __cplusplus >= 202002L
+    template<> class<ExitType::ON_SUCCESS> should_run{
+      static bool should_run() { return std::uncaught_exceptions() == 0; }
+    };
+    template<> class<ExitType::ON_FAILURE> should_run{
+      static bool should_run() { return std::uncaught_exceptions() != 0; }
+    };
+#elif __cplusplus >= 201411L
+    template<> class<ExitType::ON_SUCCESS> should_run{
+      static bool should_run() { return !std::uncaught_exception(); }
+    };
+    template<> class<ExitType::ON_FAILURE> should_run{
+      static bool should_run() { return std::uncaught_exception(); }
+    };
+#endif
 
     /* --- The actual scope_guard template --- */
 
-    template<typename Callback,
+    template<typename Callback, ExitType exit_type = ExitType::ALWAYS
              typename = typename std::enable_if<
                is_proper_sg_callback_t<Callback>::value>::type>
     class scope_guard;
@@ -97,8 +134,8 @@ namespace sg
 
     /* --- The template specialization that actually defines the class --- */
 
-    template<typename Callback>
-    class SG_NODISCARD scope_guard<Callback> final
+    template<typename Callback, ExitType exit_type>
+    class SG_NODISCARD scope_guard<Callback, exit_type> final
     {
     public:
       typedef Callback callback_type;
@@ -142,8 +179,8 @@ namespace sg
 } // namespace sg
 
 ////////////////////////////////////////////////////////////////////////////////
-template<typename Callback>
-sg::detail::scope_guard<Callback>::scope_guard(Callback&& callback)
+template<typename Callback, ExitType exit_type>
+sg::detail::scope_guard<Callback, exit_type>::scope_guard(Callback&& callback)
 noexcept(std::is_nothrow_constructible<Callback, Callback&&>::value)
   : m_callback(std::forward<Callback>(callback)) /* use () instead of {} because
     of DR 1467 (https://is.gd/WHmWuo), which still impacts older compilers
@@ -153,17 +190,17 @@ noexcept(std::is_nothrow_constructible<Callback, Callback&&>::value)
 {}
 
 ////////////////////////////////////////////////////////////////////////////////
-template<typename Callback>
-sg::detail::scope_guard<Callback>::scope_guard::~scope_guard() noexcept  /*
+template<typename Callback, ExitType exit_type>
+sg::detail::scope_guard<Callback, exit_type>::scope_guard::~scope_guard() noexcept  /*
 need the extra injected-class-name here to make different compilers happy */
 {
-  if(m_active)
+  if(m_active && should_run<exit_type>::should_run())
     m_callback();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-template<typename Callback>
-sg::detail::scope_guard<Callback>::scope_guard(scope_guard&& other)
+template<typename Callback, ExitType exit_type>
+sg::detail::scope_guard<Callback, exit_type>::scope_guard(scope_guard&& other)
 noexcept(std::is_nothrow_constructible<Callback, Callback&&>::value)
   : m_callback(std::forward<Callback>(other.m_callback)) // idem
   , m_active{std::move(other.m_active)}
@@ -172,19 +209,19 @@ noexcept(std::is_nothrow_constructible<Callback, Callback&&>::value)
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-template<typename Callback>
-inline void sg::detail::scope_guard<Callback>::dismiss() noexcept
+template<typename Callback, ExitType exit_type>
+inline void sg::detail::scope_guard<Callback, exit_type>::dismiss() noexcept
 {
   m_active = false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
-template<typename Callback>
+template<typename Callback, ExitType exit_type>
 inline auto sg::detail::make_scope_guard(Callback&& callback)
 noexcept(std::is_nothrow_constructible<Callback, Callback&&>::value)
--> detail::scope_guard<Callback>
+-> detail::scope_guard<Callback, exit_type>
 {
-  return detail::scope_guard<Callback>{std::forward<Callback>(callback)};
+  return detail::scope_guard<Callback, exit_type>{std::forward<Callback>(callback)};
 }
 
 #endif /* SCOPE_GUARD_HPP_ */
