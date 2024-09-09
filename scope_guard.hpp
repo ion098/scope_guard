@@ -84,22 +84,22 @@ namespace sg
                      std::is_nothrow_destructible<T>>
     {};
 
-    template<ExitType exit_type> class should_run;
-    template<> class should_run<ExitType::ALWAYS> {
+    template<ExitType exit_type> class ShouldRun;
+    template<> class ShouldRun<ExitType::ALWAYS> {
       constexpr static bool should_run() { return true; }
     };
 #if __cplusplus >= 202002L
-    template<> class should_run<ExitType::ON_SUCCESS> {
+    template<> class ShouldRun<ExitType::ON_SUCCESS> {
       static bool should_run() { return std::uncaught_exceptions() == 0; }
     };
-    template<> class should_run<ExitType::ON_FAILURE> {
+    template<> class ShouldRun<ExitType::ON_FAILURE> {
       static bool should_run() { return std::uncaught_exceptions() != 0; }
     };
 #elif __cplusplus >= 201411L
-    template<> class should_run<ExitType::ON_SUCCESS> {
+    template<> class ShouldRun<ExitType::ON_SUCCESS> {
       static bool should_run() { return !std::uncaught_exception(); }
     };
-    template<> class should_run<ExitType::ON_FAILURE> {
+    template<> class ShouldRun<ExitType::ON_FAILURE> {
       static bool should_run() { return std::uncaught_exception(); }
     };
 #endif
@@ -184,7 +184,7 @@ template<typename Callback, sg::ExitType exit_type>
 sg::detail::scope_guard<Callback, exit_type>::scope_guard::~scope_guard() noexcept  /*
 need the extra injected-class-name here to make different compilers happy */
 {
-  if(m_active && should_run<exit_type>::should_run())
+  if(m_active && ShouldRun<exit_type>::should_run())
     m_callback();
 }
 
