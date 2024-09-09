@@ -84,22 +84,22 @@ namespace sg
                      std::is_nothrow_destructible<T>>
     {};
 
-    template<ExitType exit_type> class ShouldRun;
-    template<> class ShouldRun<ExitType::ALWAYS> {
+    template<ExitType exit_type> struct ShouldRun;
+    template<> struct ShouldRun<ExitType::ALWAYS> {
       constexpr static bool should_run() { return true; }
     };
-#if __cplusplus >= 202002L
-    template<> class ShouldRun<ExitType::ON_SUCCESS> {
+#if __cplusplus >= 201703L
+    template<> struct ShouldRun<ExitType::ON_SUCCESS> {
       static bool should_run() { return std::uncaught_exceptions() == 0; }
     };
-    template<> class ShouldRun<ExitType::ON_FAILURE> {
+    template<> struct ShouldRun<ExitType::ON_FAILURE> {
       static bool should_run() { return std::uncaught_exceptions() != 0; }
     };
 #elif __cplusplus >= 201411L
-    template<> class ShouldRun<ExitType::ON_SUCCESS> {
+    template<> struct ShouldRun<ExitType::ON_SUCCESS> {
       static bool should_run() { return !std::uncaught_exception(); }
     };
-    template<> class ShouldRun<ExitType::ON_FAILURE> {
+    template<> struct ShouldRun<ExitType::ON_FAILURE> {
       static bool should_run() { return std::uncaught_exception(); }
     };
 #endif
